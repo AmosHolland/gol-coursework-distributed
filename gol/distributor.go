@@ -17,48 +17,6 @@ type distributorChannels struct {
 
 // distributor divides the work between workers and interacts with other goroutines.
 
-func calculateNextState(p Params, world [][]byte) [][]byte {
-
-	newWorld := make([][]byte, p.ImageHeight)
-	for i := range world {
-		newWorld[i] = make([]byte, p.ImageWidth)
-	}
-
-	for y, row := range world {
-		for x, status := range row {
-			score := scoreCell(x, y, p.ImageWidth, p.ImageHeight, world)
-			var newStatus byte = 0
-			if status == 255 {
-				if score == 2 || score == 3 {
-					newStatus = 255
-				}
-			} else {
-				if score == 3 {
-					newStatus = 255
-				}
-			}
-			newWorld[y][x] = newStatus
-		}
-	}
-
-	return newWorld
-}
-
-func scoreCell(x, y, w, h int, world [][]byte) byte {
-
-	var score byte = 0
-
-	for i := y - 1; i <= y+1; i++ {
-		for j := x - 1; j <= x+1; j++ {
-			if !(i == y && j == x) {
-				score += (world[(h+i)%h][(w+j)%w] / 255)
-			}
-		}
-	}
-	return score
-
-}
-
 func getLiveCells(world [][]byte, p Params) []util.Cell {
 	liveCells := make([]util.Cell, 0)
 	number := 0
@@ -95,11 +53,6 @@ func distributor(p Params, c distributorChannels) {
 	turn := 0
 
 	// TODO: Execute all turns of the Game of Life.
-
-	for turn < p.Turns {
-		world = calculateNextState(p, world)
-		turn++
-	}
 
 	// TODO: Report the final state using FinalTurnCompleteEvent.
 
