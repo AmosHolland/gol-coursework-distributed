@@ -98,6 +98,7 @@ func (g *GolWorker) ProgressToTurn(req stubs.TurnRequest, res *stubs.WorldData) 
 		for turn < req.Turn {
 			world = calculateNextState()
 			turn++
+			fmt.Println("Taken", turn)
 		}
 	}
 	res.LiveCells = getLiveCells()
