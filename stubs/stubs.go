@@ -4,6 +4,9 @@ import (
 	"uk.ac.bris.cs/gameoflife/util"
 )
 
+var WorldLoader = "GolWorker.LoadNewWorld"
+var TakeTurns = "GolWorker.ProgressToTurn"
+
 type WorldData struct {
 	LiveCells []util.Cell
 	Height    int

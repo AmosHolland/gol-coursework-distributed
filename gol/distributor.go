@@ -2,7 +2,9 @@ package gol
 
 import (
 	"fmt"
+	"net/rpc"
 
+	"uk.ac.bris.cs/gameoflife/stubs"
 	"uk.ac.bris.cs/gameoflife/util"
 )
 
@@ -54,9 +56,18 @@ func distributor(p Params, c distributorChannels) {
 
 	// TODO: Execute all turns of the Game of Life.
 
+	server := "54.84.37.1:8030"
+	client, _ := rpc.Dial("tcp", server)
+
+	err := client.Call(stubs.WorldLoader, stubs.WorldData{LiveCells: getLiveCells(world, p), Height: p.ImageHeight, Width: p.ImageWidth}, &stubs.Report{Message: ""})
+	fmt.Println(err)
+
+	response := stubs.WorldData{Height: p.ImageHeight, Width: p.ImageWidth}
+	err = client.Call(stubs.TakeTurns, stubs.TurnRequest{Turn: p.Turns}, &response)
+	fmt.Println(err)
 	// TODO: Report the final state using FinalTurnCompleteEvent.
 
-	c.events <- FinalTurnComplete{CompletedTurns: turn, Alive: getLiveCells(world, p)}
+	c.events <- FinalTurnComplete{CompletedTurns: turn, Alive: response.LiveCells}
 	// Make sure that the Io has finished any output before exiting.
 	c.ioCommand <- ioCheckIdle
 	<-c.ioIdle

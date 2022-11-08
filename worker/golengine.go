@@ -1,4 +1,4 @@
-package worker
+package main
 
 import (
 	"flag"
@@ -73,7 +73,8 @@ func getLiveCells() []util.Cell {
 
 type GolWorker struct{}
 
-func (g *GolWorker) LoadNewWorld(req stubs.WorldData, res *stubs.Report) {
+func (g *GolWorker) LoadNewWorld(req stubs.WorldData, res *stubs.Report) (err error) {
+	fmt.Println("Gaming1")
 	world = make([][]byte, req.Height)
 	for i := range world {
 		world[i] = make([]byte, req.Width)
@@ -85,9 +86,12 @@ func (g *GolWorker) LoadNewWorld(req stubs.WorldData, res *stubs.Report) {
 	width = req.Width
 	height = req.Height
 	turn = 0
+
+	return
 }
 
-func (g *GolWorker) ProgressToTurn(req stubs.TurnRequest, res *stubs.WorldData) {
+func (g *GolWorker) ProgressToTurn(req stubs.TurnRequest, res *stubs.WorldData) (err error) {
+	fmt.Println("Gaming")
 	if req.Turn <= turn {
 		fmt.Println("Requested turn has already been taken")
 	} else {
@@ -95,8 +99,10 @@ func (g *GolWorker) ProgressToTurn(req stubs.TurnRequest, res *stubs.WorldData) 
 			world = calculateNextState()
 			turn++
 		}
-		res.LiveCells = getLiveCells()
 	}
+	res.LiveCells = getLiveCells()
+
+	return
 }
 
 func main() {
