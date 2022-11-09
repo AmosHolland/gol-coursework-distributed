@@ -33,9 +33,7 @@ func getLiveCells(world [][]byte, p Params) []util.Cell {
 	return liveCells
 }
 
-func distributor(p Params, c distributorChannels) {
-
-	// TODO: Create a 2D slice to store the world.
+func makeWorld(p Params, c distributorChannels) [][]byte {
 	world := make([][]byte, p.ImageHeight)
 	for i := range world {
 		world[i] = make([]byte, p.ImageWidth)
@@ -52,6 +50,14 @@ func distributor(p Params, c distributorChannels) {
 		}
 	}
 
+	return world
+}
+
+func distributor(p Params, c distributorChannels) {
+
+	// TODO: Create a 2D slice to store the world.
+	world := makeWorld(p, c)
+
 	turn := 0
 
 	// TODO: Execute all turns of the Game of Life.
@@ -59,14 +65,15 @@ func distributor(p Params, c distributorChannels) {
 	server := "54.84.37.1:8030"
 	client, _ := rpc.Dial("tcp", server)
 
-	err := client.Call(stubs.WorldLoader, stubs.WorldData{LiveCells: getLiveCells(world, p), Height: p.ImageHeight, Width: p.ImageWidth}, &stubs.Report{Message: ""})
-	fmt.Println(err)
+	client.Call(stubs.WorldLoader, stubs.WorldData{LiveCells: getLiveCells(world, p), Height: p.ImageHeight, Width: p.ImageWidth}, &stubs.Report{Message: ""})
 
 	response := stubs.WorldData{Height: p.ImageHeight, Width: p.ImageWidth}
-	err = client.Call(stubs.TakeTurns, stubs.TurnRequest{Turn: p.Turns}, &response)
-	fmt.Println(err)
-	// TODO: Report the final state using FinalTurnCompleteEvent.
 
+	turnsFinished := make(chan *rpc.Call, 2)
+	client.Go(stubs.TakeTurns, stubs.TurnRequest{Turn: p.Turns}, &response, turnsFinished)
+
+	// TODO: Report the final state using FinalTurnCompleteEvent.
+	<-turnsFinished
 	c.events <- FinalTurnComplete{CompletedTurns: turn, Alive: response.LiveCells}
 	// Make sure that the Io has finished any output before exiting.
 	c.ioCommand <- ioCheckIdle

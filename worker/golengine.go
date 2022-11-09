@@ -14,6 +14,7 @@ var world [][]byte
 var width int
 var height int
 var turn int
+var pausePlay chan bool = make(chan bool)
 
 func calculateNextState() [][]byte {
 
@@ -96,13 +97,23 @@ func (g *GolWorker) ProgressToTurn(req stubs.TurnRequest, res *stubs.WorldData) 
 		fmt.Println("Requested turn has already been taken")
 	} else {
 		for turn < req.Turn {
-			world = calculateNextState()
-			turn++
-			fmt.Println("Taken", turn)
+			switch {
+			case <-pausePlay:
+				<-pausePlay
+			default:
+				world = calculateNextState()
+				turn++
+			}
 		}
 	}
 	res.LiveCells = getLiveCells()
+	return
+}
 
+func (g *GolWorker) SendLiveCells(req stubs.TurnRequest, res *stubs.WorldData) (err error) {
+	pausePlay <- true
+	res.LiveCells = getLiveCells()
+	pausePlay <- true
 	return
 }
 

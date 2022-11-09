@@ -6,6 +6,7 @@ import (
 
 var WorldLoader = "GolWorker.LoadNewWorld"
 var TakeTurns = "GolWorker.ProgressToTurn"
+var GetLiveCells = "GolWorker.SendLiveCells"
 
 type WorldData struct {
 	LiveCells []util.Cell
