@@ -56,7 +56,7 @@ func distributor(p Params, c distributorChannels) {
 
 	// TODO: Execute all turns of the Game of Life.
 
-	server := "54.84.37.1:8030"
+	server := "127.0.0.1:8030"
 	client, _ := rpc.Dial("tcp", server)
 
 	err := client.Call(stubs.WorldLoader, stubs.WorldData{LiveCells: getLiveCells(world, p), Height: p.ImageHeight, Width: p.ImageWidth}, &stubs.Report{Message: ""})
