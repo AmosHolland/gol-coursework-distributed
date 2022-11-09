@@ -3,6 +3,7 @@ package gol
 import (
 	"fmt"
 	"net/rpc"
+	"time"
 
 	"uk.ac.bris.cs/gameoflife/stubs"
 	"uk.ac.bris.cs/gameoflife/util"
@@ -53,6 +54,15 @@ func makeWorld(p Params, c distributorChannels) [][]byte {
 	return world
 }
 
+func liveCellsReport(client *rpc.Client, c distributorChannels, p Params) {
+	response := stubs.LiveCellsCount{LiveCells: 0, Turn: 0}
+	for {
+		time.Sleep(2 * time.Second)
+		client.Call(stubs.GetLiveCells, stubs.TurnRequest{Turn: 0}, response)
+		c.events <- AliveCellsCount{CompletedTurns: response.Turn, CellsCount: response.LiveCells}
+	}
+}
+
 func distributor(p Params, c distributorChannels) {
 
 	// TODO: Create a 2D slice to store the world.
@@ -72,6 +82,7 @@ func distributor(p Params, c distributorChannels) {
 	turnsFinished := make(chan *rpc.Call, 2)
 	client.Go(stubs.TakeTurns, stubs.TurnRequest{Turn: p.Turns}, &response, turnsFinished)
 
+	go liveCellsReport(client, c, p)
 	// TODO: Report the final state using FinalTurnCompleteEvent.
 	<-turnsFinished
 	c.events <- FinalTurnComplete{CompletedTurns: turn, Alive: response.LiveCells}

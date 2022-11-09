@@ -110,9 +110,10 @@ func (g *GolWorker) ProgressToTurn(req stubs.TurnRequest, res *stubs.WorldData) 
 	return
 }
 
-func (g *GolWorker) SendLiveCells(req stubs.TurnRequest, res *stubs.WorldData) (err error) {
+func (g *GolWorker) SendLiveCells(req stubs.TurnRequest, res *stubs.LiveCellsCount) (err error) {
 	pausePlay <- true
-	res.LiveCells = getLiveCells()
+	res.LiveCells = len(getLiveCells())
+	res.Turn = turn
 	pausePlay <- true
 	return
 }

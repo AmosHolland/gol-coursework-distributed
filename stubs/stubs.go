@@ -21,3 +21,8 @@ type TurnRequest struct {
 type Report struct {
 	Message string
 }
+
+type LiveCellsCount struct {
+	LiveCells int
+	Turn      int
+}
