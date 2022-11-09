@@ -97,7 +97,7 @@ func (g *GolWorker) ProgressToTurn(req stubs.TurnRequest, res *stubs.WorldData) 
 		fmt.Println("Requested turn has already been taken")
 	} else {
 		for turn < req.Turn {
-			switch {
+			select {
 			case <-pausePlay:
 				<-pausePlay
 			default:
