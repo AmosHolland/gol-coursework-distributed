@@ -56,9 +56,12 @@ func makeWorld(p Params, c distributorChannels) [][]byte {
 
 func liveCellsReport(client *rpc.Client, c distributorChannels, p Params) {
 	response := stubs.LiveCellsCount{LiveCells: 0, Turn: 0}
+	ticker := time.NewTicker(2 * time.Second)
 	for {
-		time.Sleep(2 * time.Second)
-		client.Call(stubs.GetLiveCells, stubs.TurnRequest{Turn: 0}, response)
+		fmt.Println("Hellaur")
+		err := client.Call(stubs.GetLiveCells, stubs.TurnRequest{Turn: 0}, &response)
+		fmt.Println(err)
+		<-ticker.C
 		c.events <- AliveCellsCount{CompletedTurns: response.Turn, CellsCount: response.LiveCells}
 	}
 }
@@ -79,10 +82,13 @@ func distributor(p Params, c distributorChannels) {
 
 	response := stubs.WorldData{Height: p.ImageHeight, Width: p.ImageWidth}
 
-	client.Call(stubs.TakeTurns, stubs.TurnRequest{Turn: p.Turns}, &response)
+	turnsFinished := make(chan *rpc.Call, 2)
+	client.Go(stubs.TakeTurns, stubs.TurnRequest{Turn: p.Turns}, &response, turnsFinished)
 
-	//go liveCellsReport(client, c, p)
+	go liveCellsReport(client, c, p)
 	// TODO: Report the final state using FinalTurnCompleteEvent.
+
+	<-turnsFinished
 	c.events <- FinalTurnComplete{CompletedTurns: turn, Alive: response.LiveCells}
 	// Make sure that the Io has finished any output before exiting.
 	c.ioCommand <- ioCheckIdle
