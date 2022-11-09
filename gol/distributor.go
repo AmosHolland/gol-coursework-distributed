@@ -72,19 +72,17 @@ func distributor(p Params, c distributorChannels) {
 
 	// TODO: Execute all turns of the Game of Life.
 
-	server := "54.84.37.1:8030"
+	server := "127.0.0.1:8030"
 	client, _ := rpc.Dial("tcp", server)
 
 	client.Call(stubs.WorldLoader, stubs.WorldData{LiveCells: getLiveCells(world, p), Height: p.ImageHeight, Width: p.ImageWidth}, &stubs.Report{Message: ""})
 
 	response := stubs.WorldData{Height: p.ImageHeight, Width: p.ImageWidth}
 
-	turnsFinished := make(chan *rpc.Call, 2)
-	client.Go(stubs.TakeTurns, stubs.TurnRequest{Turn: p.Turns}, &response, turnsFinished)
+	client.Call(stubs.TakeTurns, stubs.TurnRequest{Turn: p.Turns}, &response)
 
-	go liveCellsReport(client, c, p)
+	//go liveCellsReport(client, c, p)
 	// TODO: Report the final state using FinalTurnCompleteEvent.
-	<-turnsFinished
 	c.events <- FinalTurnComplete{CompletedTurns: turn, Alive: response.LiveCells}
 	// Make sure that the Io has finished any output before exiting.
 	c.ioCommand <- ioCheckIdle
