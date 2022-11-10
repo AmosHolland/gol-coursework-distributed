@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"net"
 	"net/rpc"
 
@@ -10,13 +9,14 @@ import (
 	"uk.ac.bris.cs/gameoflife/util"
 )
 
-var world [][]byte
-var width int
-var height int
-var turn int
-var pausePlay chan bool = make(chan bool)
+type World struct {
+	Board  [][]byte
+	Height int
+	Width  int
+	Turn   int
+}
 
-func calculateNextState() [][]byte {
+func calculateNextState(world [][]byte, width, height int) [][]byte {
 
 	newWorld := make([][]byte, width)
 	for i := range world {
@@ -58,7 +58,7 @@ func scoreCell(x, y, w, h int, world [][]byte) byte {
 
 }
 
-func getLiveCells() []util.Cell {
+func getLiveCells(world [][]byte) []util.Cell {
 	liveCells := make([]util.Cell, 0)
 	number := 0
 	for y, row := range world {
@@ -72,50 +72,31 @@ func getLiveCells() []util.Cell {
 	return liveCells
 }
 
-type GolWorker struct{}
-
-func (g *GolWorker) LoadNewWorld(req stubs.WorldData, res *stubs.Report) (err error) {
-	fmt.Println("Gaming1")
-	world = make([][]byte, req.Height)
+func loadWorld(worldData stubs.WorldData) *World {
+	world := make([][]byte, worldData.Height)
 	for i := range world {
-		world[i] = make([]byte, req.Width)
+		world[i] = make([]byte, worldData.Width)
 	}
-	for _, cell := range req.LiveCells {
+	for _, cell := range worldData.LiveCells {
 		world[cell.Y][cell.X] = 255
 	}
 
-	width = req.Width
-	height = req.Height
-	turn = 0
-
-	return
+	return &World{Board: world, Width: worldData.Width, Height: worldData.Height, Turn: 0}
 }
 
-func (g *GolWorker) ProgressToTurn(req stubs.TurnRequest, res *stubs.WorldData) (err error) {
-	fmt.Println("Gaming")
-	if req.Turn <= turn {
-		fmt.Println("Requested turn has already been taken")
+type GolWorker struct{}
+
+func (g *GolWorker) ProgressToTurn(req stubs.WorldData, res *stubs.WorldData) (err error) {
+	world := loadWorld(req)
+
+	if req.Turn <= world.Turn {
 	} else {
-		for turn < req.Turn {
-			select {
-			case <-pausePlay:
-				<-pausePlay
-			default:
-				world = calculateNextState()
-				turn++
-			}
+		for world.Turn < req.Turn {
+			world.Board = calculateNextState(world.Board, world.Width, world.Height)
+			world.Turn++
 		}
 	}
-	res.LiveCells = getLiveCells()
-	return
-}
-
-func (g *GolWorker) SendLiveCells(req stubs.TurnRequest, res *stubs.LiveCellsCount) (err error) {
-	pausePlay <- true
-	fmt.Println("ahaha")
-	res.LiveCells = len(getLiveCells())
-	res.Turn = turn
-	pausePlay <- true
+	res.LiveCells = getLiveCells(world.Board)
 	return
 }
 

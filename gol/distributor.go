@@ -3,7 +3,6 @@ package gol
 import (
 	"fmt"
 	"net/rpc"
-	"time"
 
 	"uk.ac.bris.cs/gameoflife/stubs"
 	"uk.ac.bris.cs/gameoflife/util"
@@ -54,18 +53,6 @@ func makeWorld(p Params, c distributorChannels) [][]byte {
 	return world
 }
 
-func liveCellsReport(client *rpc.Client, c distributorChannels, p Params) {
-	response := stubs.LiveCellsCount{LiveCells: 0, Turn: 0}
-	ticker := time.NewTicker(2 * time.Second)
-	for {
-		fmt.Println("Hellaur")
-		err := client.Call(stubs.GetLiveCells, stubs.TurnRequest{Turn: 0}, &response)
-		fmt.Println(err)
-		<-ticker.C
-		c.events <- AliveCellsCount{CompletedTurns: response.Turn, CellsCount: response.LiveCells}
-	}
-}
-
 func distributor(p Params, c distributorChannels) {
 
 	// TODO: Create a 2D slice to store the world.
@@ -78,14 +65,11 @@ func distributor(p Params, c distributorChannels) {
 	server := "127.0.0.1:8030"
 	client, _ := rpc.Dial("tcp", server)
 
-	client.Call(stubs.WorldLoader, stubs.WorldData{LiveCells: getLiveCells(world, p), Height: p.ImageHeight, Width: p.ImageWidth}, &stubs.Report{Message: ""})
-
 	response := stubs.WorldData{Height: p.ImageHeight, Width: p.ImageWidth}
 
 	turnsFinished := make(chan *rpc.Call, 2)
-	client.Go(stubs.TakeTurns, stubs.TurnRequest{Turn: p.Turns}, &response, turnsFinished)
+	client.Go(stubs.TakeTurns, stubs.WorldData{LiveCells: getLiveCells(world, p), Width: p.ImageWidth, Height: p.ImageHeight, Turn: p.Turns}, &response, turnsFinished)
 
-	go liveCellsReport(client, c, p)
 	// TODO: Report the final state using FinalTurnCompleteEvent.
 
 	<-turnsFinished
