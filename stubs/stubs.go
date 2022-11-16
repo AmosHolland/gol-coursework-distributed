@@ -5,11 +5,18 @@ import (
 )
 
 var TakeTurns = "GolWorker.ProgressToTurn"
+var LiveCellReport = "StatusReceiver.LiveCellReport"
 
 type WorldData struct {
 	LiveCells []util.Cell
 	Height    int
 	Width     int
+	Turn      int
+	ClientIP  string
+}
+
+type WorldResponse struct {
+	LiveCells []util.Cell
 	Turn      int
 }
 
@@ -20,4 +27,8 @@ type TurnRequest struct {
 type LiveCellsCount struct {
 	LiveCells int
 	Turn      int
+}
+
+type Report struct {
+	Message string
 }

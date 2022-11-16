@@ -4,6 +4,7 @@ import (
 	"flag"
 	"net"
 	"net/rpc"
+	"time"
 
 	"uk.ac.bris.cs/gameoflife/stubs"
 	"uk.ac.bris.cs/gameoflife/util"
@@ -86,17 +87,24 @@ func loadWorld(worldData stubs.WorldData) *World {
 
 type GolWorker struct{}
 
-func (g *GolWorker) ProgressToTurn(req stubs.WorldData, res *stubs.WorldData) (err error) {
+func (g *GolWorker) ProgressToTurn(req stubs.WorldData, res *stubs.WorldResponse) (err error) {
+	client, err := rpc.Dial("tcp", req.ClientIP)
 	world := loadWorld(req)
-
 	if req.Turn <= world.Turn {
 	} else {
+		ticker := time.NewTicker(2 * time.Second)
 		for world.Turn < req.Turn {
-			world.Board = calculateNextState(world.Board, world.Width, world.Height)
-			world.Turn++
+			select {
+			case <-ticker.C:
+				err = client.Call(stubs.LiveCellReport, stubs.LiveCellsCount{LiveCells: len(getLiveCells(world.Board)), Turn: world.Turn}, &stubs.Report{})
+			default:
+				world.Board = calculateNextState(world.Board, world.Width, world.Height)
+				world.Turn++
+			}
 		}
 	}
 	res.LiveCells = getLiveCells(world.Board)
+	res.Turn = world.Turn
 	return
 }
 
