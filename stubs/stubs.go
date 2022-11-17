@@ -32,3 +32,7 @@ type LiveCellsCount struct {
 type Report struct {
 	Message string
 }
+
+type KeyPress struct {
+	Key rune
+}
