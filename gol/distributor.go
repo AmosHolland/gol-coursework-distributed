@@ -16,6 +16,7 @@ type distributorChannels struct {
 	ioFilename chan<- string
 	ioOutput   chan<- uint8
 	ioInput    <-chan uint8
+	keyPresses <-chan rune
 }
 
 // channel for sending events from rpc calls to the main program loop
@@ -76,9 +77,8 @@ func acceptListener(listener *net.Listener) {
 }
 
 // function to write a PGM file using IO channels, sends each cell down IO channel after initialising
-func writePgm(world [][]byte, c distributorChannels, p Params) {
+func writePgm(world [][]byte, c distributorChannels, fileName string) {
 	c.ioCommand <- ioOutput
-	fileName := fmt.Sprint(p.ImageWidth, "x", p.ImageHeight, "x", p.Turns)
 	c.ioFilename <- fileName
 	for _, row := range world {
 		for _, cell := range row {
@@ -146,14 +146,15 @@ func distributor(p Params, c distributorChannels) {
 			makePGM = true
 
 		// if a key is pressed then we need to handle this press
-		case keyPress := <-c.ioInput:
+		case keyPress := <-c.keyPresses:
 			// key press is first send along to the golengine to deal with things on that end
 			// this will block until things are finished on the server side
-			// send keyPress to golengine
+			client.Call(stubs.KeyPressed, stubs.KeyPress{Key: rune(keyPress)}, stubs.Report{Message: ""})
 			// then deal with any client side behaviour by setting flag variables, and printing to console if
 			// required
 			if keyPress == 's' {
-				// write a PGM specifically for the current turn, maybe bring name generation outside of writePGM?
+				fileName := fmt.Sprint(p.ImageWidth, "x", p.ImageHeight, "x", response.Turn)
+				writePgm(worldFromLiveCells(response.LiveCells, p), c, fileName)
 			}
 			if keyPress == 'q' && !paused {
 				halt = true
@@ -180,7 +181,8 @@ func distributor(p Params, c distributorChannels) {
 	// after main loop has ended send an event for the final turn, and create a final PGM of the world if necessary
 	c.events <- FinalTurnComplete{CompletedTurns: turn, Alive: response.LiveCells}
 	if makePGM {
-		writePgm(worldFromLiveCells(response.LiveCells, p), c, p)
+		fileName := fmt.Sprint(p.ImageWidth, "x", p.ImageHeight, "x", p.Turns)
+		writePgm(worldFromLiveCells(response.LiveCells, p), c, fileName)
 	}
 
 	// Make sure that the Io has finished any output before exiting.
