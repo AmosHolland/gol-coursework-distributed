@@ -13,7 +13,7 @@ import (
 
 // channels to handle communication from rpc called functions
 var keyPresses chan rune = make(chan rune)
-var continueChan chan bool = make(chan bool)
+var stopRunning chan bool = make(chan bool)
 
 // struct to store relevant data about a given world
 type World struct {
@@ -74,7 +74,6 @@ func scoreCell(x, y, w, h int, world [][]byte) byte {
 		}
 	}
 	return score
-
 }
 
 // function to get list of live cells in a given world, works the same as the one in the controller
@@ -106,6 +105,10 @@ func loadWorld(worldData stubs.WorldData) *World {
 	return &World{Board: world, Width: worldData.Width, Height: worldData.Height, Turn: 0}
 }
 
+func acceptListener(listener *net.Listener) {
+	rpc.Accept(*listener)
+}
+
 // struct for rpc calls
 type GolWorker struct{}
 
@@ -114,7 +117,6 @@ type GolWorker struct{}
 // it's handled the keypress before returning
 func (g *GolWorker) KeyPressed(req stubs.KeyPress, res *stubs.Report) (err error) {
 	keyPresses <- req.Key
-	<-continueChan
 	return
 }
 
@@ -139,36 +141,33 @@ func (g *GolWorker) ProgressToTurn(req stubs.WorldData, res *stubs.WorldResponse
 				break
 			}
 			// if processing has not been paused
+			fmt.Println(world.Turn)
 			if !pause {
 				// select between control signals, and a default case
 				select {
 				// sending a live cells report every 2 seconds
 				case <-ticker.C:
-					err = client.Call(stubs.LiveCellReport, stubs.LiveCellsCount{LiveCells: len(getLiveCells(world.Board)), Turn: world.Turn}, &stubs.Report{})
+					client.Call(stubs.LiveCellReport, stubs.LiveCellsCount{LiveCells: len(getLiveCells(world.Board)), Turn: world.Turn}, &stubs.Report{})
 				// handling keypresses
 				case keyPress := <-keyPresses:
+					fmt.Println(keyPress)
 					switch keyPress {
-					// s needs to make a PGM, so update the response object, and indicate that it's ok to continue
+					// s needs to make a PGM, so send a response object with current status
 					case 's':
-						res.LiveCells = getLiveCells(world.Board)
-						res.Turn = (world.Turn)
-						continueChan <- true
+						client.Call(stubs.KeyPressResponse, stubs.WorldResponse{LiveCells: getLiveCells(world.Board), Turn: world.Turn}, &stubs.Report{})
 					// q means that the client has shut, so indicate that the GOL needs to halt
 					case 'q':
 						halt = true
 					// k means that the GOL needs to end, and a new PGM needs to be made,
 					// update the response object, indicate that it's okay to continue, and that the program needs to close
 					case 'k':
-						res.LiveCells = getLiveCells(world.Board)
-						res.Turn = world.Turn
+						client.Call(stubs.KeyPressResponse, stubs.WorldResponse{LiveCells: getLiveCells(world.Board), Turn: world.Turn}, &stubs.Report{})
 						close = true
-						continueChan <- true
-					// p means pause, and the client needs to report the turn, so update the turn, indicate
+						// p means pause, and the client needs to report the turn, so update the turn, indicate
 					// that processing has been paused, then indicate that it's okay for the client to continue
 					case 'p':
-						res.Turn = world.Turn
+						client.Call(stubs.KeyPressResponse, stubs.WorldResponse{Turn: world.Turn}, &stubs.Report{})
 						pause = true
-						continueChan <- true
 					}
 				// by default take another turn of the GOL, and increment turn
 				default:
@@ -183,23 +182,23 @@ func (g *GolWorker) ProgressToTurn(req stubs.WorldData, res *stubs.WorldResponse
 				// to false
 				switch keyPress {
 				case 'k':
-					res.LiveCells = getLiveCells(world.Board)
-					res.Turn = world.Turn
+					client.Call(stubs.KeyPressResponse, stubs.WorldResponse{LiveCells: getLiveCells(world.Board), Turn: world.Turn}, &stubs.Report{})
 					close = true
-					continueChan <- true
 				case 'p':
 					pause = false
 				}
 			}
 		}
 	}
-	// after all turns are done, or if the program has stopped for other reasons, update the response object
+	// after all turns are done, or if the program has been told to fully stop, update the response object
 	res.LiveCells = getLiveCells(world.Board)
 	res.Turn = world.Turn
 	// if the program needs to actually shut down, send down a channel to tell main that it needs to stop
 	if close {
-		//send down a channel that will be blocking main from closing
+		stopRunning <- true
 	}
+	fmt.Println("Quitting...")
+	client.Close()
 	return
 }
 
@@ -211,6 +210,6 @@ func main() {
 
 	rpc.Register(&GolWorker{})
 	listener, _ := net.Listen("tcp", ":"+*pAddr)
-	defer listener.Close()
-	rpc.Accept(listener)
+	go acceptListener(&listener)
+	<-stopRunning
 }

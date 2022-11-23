@@ -21,6 +21,7 @@ type distributorChannels struct {
 
 // channel for sending events from rpc calls to the main program loop
 var eventPasser = make(chan Event)
+var keyPressResponses = make(chan stubs.WorldResponse)
 
 // distributor divides the work between workers and interacts with other goroutines.
 
@@ -66,8 +67,12 @@ type StatusReceiver struct{}
 
 // RPC function to allow the server to send live cell reports to the controller
 func (s *StatusReceiver) LiveCellReport(req stubs.LiveCellsCount, res *stubs.Report) (err error) {
-	fmt.Println("Report received")
 	eventPasser <- AliveCellsCount{CompletedTurns: req.Turn, CellsCount: req.LiveCells}
+	return
+}
+
+func (s *StatusReceiver) KeyPressResponse(req stubs.WorldResponse, res *stubs.Report) (err error) {
+	keyPressResponses <- req
 	return
 }
 
@@ -114,7 +119,6 @@ func distributor(p Params, c distributorChannels) {
 
 	rpc.Register(&StatusReceiver{})
 	listener, _ := net.Listen("tcp", ":8040")
-	defer listener.Close()
 	response := stubs.WorldResponse{}
 
 	// making a channel for the golengine to report down after all turns have been completed, then calling
@@ -124,14 +128,14 @@ func distributor(p Params, c distributorChannels) {
 	go acceptListener(&listener)
 
 	// flag variables to manage pausing and halting
-	halt := false
-	makePGM := false
 	paused := false
+	halt := false
+	complete := false
 
 	// main loop for dealing with events from outside of the controller
 	for {
 		// if a keypress has led to a halt, or the golengine has finished processing, then end the loop
-		if halt {
+		if halt || complete {
 			break
 		}
 		// select on relevant channels, code inside handles dealing with each event
@@ -142,26 +146,28 @@ func distributor(p Params, c distributorChannels) {
 			c.events <- event
 		// if the server is done processsing, then we need to stop and then generate a PGM
 		case <-turnsFinished:
-			halt = true
-			makePGM = true
+			complete = true
 
 		// if a key is pressed then we need to handle this press
 		case keyPress := <-c.keyPresses:
 			// key press is first send along to the golengine to deal with things on that end
 			// this will block until things are finished on the server side
-			client.Call(stubs.KeyPressed, stubs.KeyPress{Key: rune(keyPress)}, stubs.Report{Message: ""})
+			client.Call(stubs.KeyPressed, stubs.KeyPress{Key: rune(keyPress)}, &stubs.Report{Message: ""})
 			// then deal with any client side behaviour by setting flag variables, and printing to console if
 			// required
-			if keyPress == 's' {
-				fileName := fmt.Sprint(p.ImageWidth, "x", p.ImageHeight, "x", response.Turn)
-				writePgm(worldFromLiveCells(response.LiveCells, p), c, fileName)
+			if keyPress == 's' && !paused {
+				data := <-keyPressResponses
+				fileName := fmt.Sprint(p.ImageWidth, "x", p.ImageHeight, "x", data.Turn)
+				writePgm(worldFromLiveCells(data.LiveCells, p), c, fileName)
 			}
 			if keyPress == 'q' && !paused {
 				halt = true
 			}
 			if keyPress == 'k' {
+				data := <-keyPressResponses
+				fileName := fmt.Sprint(p.ImageWidth, "x", p.ImageHeight, "x", data.Turn)
+				writePgm(worldFromLiveCells(data.LiveCells, p), c, fileName)
 				halt = true
-				makePGM = true
 			}
 			if keyPress == 'p' {
 				// if paused, unpause, otherwise pause
@@ -169,7 +175,8 @@ func distributor(p Params, c distributorChannels) {
 					fmt.Println("Continuing")
 					paused = false
 				} else {
-					fmt.Println(response.Turn)
+					data := <-keyPressResponses
+					fmt.Println(data.Turn)
 					paused = true
 				}
 
@@ -179,12 +186,13 @@ func distributor(p Params, c distributorChannels) {
 	}
 
 	// after main loop has ended send an event for the final turn, and create a final PGM of the world if necessary
-	c.events <- FinalTurnComplete{CompletedTurns: turn, Alive: response.LiveCells}
-	if makePGM {
+	if complete {
+		c.events <- FinalTurnComplete{CompletedTurns: turn, Alive: response.LiveCells}
 		fileName := fmt.Sprint(p.ImageWidth, "x", p.ImageHeight, "x", p.Turns)
 		writePgm(worldFromLiveCells(response.LiveCells, p), c, fileName)
 	}
 
+	client.Close()
 	// Make sure that the Io has finished any output before exiting.
 
 	c.ioCommand <- ioCheckIdle

@@ -7,6 +7,8 @@ import (
 var TakeTurns = "GolWorker.ProgressToTurn"
 var LiveCellReport = "StatusReceiver.LiveCellReport"
 var KeyPressed = "GolWorker.KeyPressed"
+var KeyPressResponse = "StatusReceiver.KeyPressResponse"
+var CloseWorker = "GolWorker.Close"
 
 type WorldData struct {
 	LiveCells []util.Cell
