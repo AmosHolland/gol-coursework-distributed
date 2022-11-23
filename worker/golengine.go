@@ -79,12 +79,10 @@ func scoreCell(x, y, w, h int, world [][]byte) byte {
 // function to get list of live cells in a given world, works the same as the one in the controller
 func getLiveCells(world [][]byte) []util.Cell {
 	liveCells := make([]util.Cell, 0)
-	number := 0
 	for y, row := range world {
 		for x, status := range row {
 			if status == 255 {
 				liveCells = append(liveCells, util.Cell{X: x, Y: y})
-				number++
 			}
 		}
 	}

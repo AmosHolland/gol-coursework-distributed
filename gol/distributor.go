@@ -29,12 +29,10 @@ var keyPressResponses = make(chan stubs.WorldResponse)
 // goes through entire world, if a cell is live, it is added to the return list
 func getLiveCells(world [][]byte, p Params) []util.Cell {
 	liveCells := make([]util.Cell, 0)
-	number := 0
 	for y, row := range world {
 		for x, status := range row {
 			if status == 255 {
 				liveCells = append(liveCells, util.Cell{X: x, Y: y})
-				number++
 			}
 		}
 	}
