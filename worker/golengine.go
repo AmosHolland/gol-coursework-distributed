@@ -120,6 +120,7 @@ func (g *GolWorker) KeyPressed(req stubs.KeyPress, res *stubs.Report) (err error
 
 // main rpc function to tell the server to run the GOL based on some initial world data
 func (g *GolWorker) ProgressToTurn(req stubs.WorldData, res *stubs.WorldResponse) (err error) {
+	fmt.Println("Connected")
 	// sets up rpc connection, then loads the world and initialises flag variables
 	client, err := rpc.Dial("tcp", req.ClientIP)
 	world := loadWorld(req)
