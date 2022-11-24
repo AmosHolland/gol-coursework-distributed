@@ -122,7 +122,8 @@ func distributor(p Params, c distributorChannels) {
 	// making a channel for the golengine to report down after all turns have been completed, then calling
 	// the server to process these turns, and accepting the server for rpc calls back
 	turnsFinished := make(chan *rpc.Call, 2)
-	client.Go(stubs.TakeTurns, stubs.WorldData{LiveCells: getLiveCells(world, p), Width: p.ImageWidth, Height: p.ImageHeight, Turn: p.Turns, ClientIP: "172.25.177.243:8040"}, &response, turnsFinished)
+	fmt.Println("Heya")
+	client.Go(stubs.TakeTurns, stubs.WorldData{LiveCells: getLiveCells(world, p), Width: p.ImageWidth, Height: p.ImageHeight, Turn: p.Turns, ClientIP: "137.222.114.249:8040"}, &response, turnsFinished)
 	go acceptListener(&listener)
 
 	// flag variables to manage pausing and halting

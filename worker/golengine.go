@@ -123,6 +123,7 @@ func (g *GolWorker) ProgressToTurn(req stubs.WorldData, res *stubs.WorldResponse
 	fmt.Println("Connected")
 	// sets up rpc connection, then loads the world and initialises flag variables
 	client, err := rpc.Dial("tcp", req.ClientIP)
+	fmt.Println(err)
 	world := loadWorld(req)
 	pause := false
 	halt := false
