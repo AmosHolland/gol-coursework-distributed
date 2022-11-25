@@ -139,16 +139,15 @@ func (g *GolWorker) ProgressToTurn(req stubs.WorldData, res *stubs.WorldResponse
 				break
 			}
 			// if processing has not been paused
-			fmt.Println(world.Turn)
 			if !pause {
 				// select between control signals, and a default case
 				select {
 				// sending a live cells report every 2 seconds
 				case <-ticker.C:
+					fmt.Println("Sending live cells")
 					client.Call(stubs.LiveCellReport, stubs.LiveCellsCount{LiveCells: len(getLiveCells(world.Board)), Turn: world.Turn}, &stubs.Report{})
 				// handling keypresses
 				case keyPress := <-keyPresses:
-					fmt.Println(keyPress)
 					switch keyPress {
 					// s needs to make a PGM, so send a response object with current status
 					case 's':
@@ -164,6 +163,7 @@ func (g *GolWorker) ProgressToTurn(req stubs.WorldData, res *stubs.WorldResponse
 						// p means pause, and the client needs to report the turn, so update the turn, indicate
 					// that processing has been paused, then indicate that it's okay for the client to continue
 					case 'p':
+						fmt.Println("Pausing")
 						client.Call(stubs.KeyPressResponse, stubs.WorldResponse{Turn: world.Turn}, &stubs.Report{})
 						pause = true
 					}
@@ -183,6 +183,7 @@ func (g *GolWorker) ProgressToTurn(req stubs.WorldData, res *stubs.WorldResponse
 					client.Call(stubs.KeyPressResponse, stubs.WorldResponse{LiveCells: getLiveCells(world.Board), Turn: world.Turn}, &stubs.Report{})
 					close = true
 				case 'p':
+					fmt.Println("Continuing")
 					pause = false
 				}
 			}
