@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"net/rpc"
-	"time"
 
 	"uk.ac.bris.cs/gameoflife/stubs"
 	"uk.ac.bris.cs/gameoflife/util"
@@ -14,6 +13,9 @@ import (
 // channels to handle communication from rpc called functions
 var keyPresses chan rune = make(chan rune)
 var stopRunning chan bool = make(chan bool)
+var ticker chan bool = make(chan bool)
+var liveCellChan chan stubs.LiveCellsCount = make(chan stubs.LiveCellsCount)
+var keyPressResponses chan stubs.WorldResponse = make(chan stubs.WorldResponse)
 
 // struct to store relevant data about a given world
 type World struct {
@@ -113,15 +115,25 @@ type GolWorker struct{}
 // rpc function for handling keypresses on client side
 // sends keypress down a channel to the main worker loop, then waits for the worker to indicate that
 // it's handled the keypress before returning
-func (g *GolWorker) KeyPressed(req stubs.KeyPress, res *stubs.Report) (err error) {
+func (g *GolWorker) KeyPressed(req stubs.KeyPress, res *stubs.WorldResponse) (err error) {
 	keyPresses <- req.Key
+	response := <-keyPressResponses
+	res.LiveCells = response.LiveCells
+	res.Turn = response.Turn
+	return
+}
+
+func (g *GolWorker) LiveCellRequest(req stubs.Report, res *stubs.LiveCellsCount) (err error) {
+	ticker <- true
+	response := <-liveCellChan
+	res.LiveCells = response.LiveCells
+	res.Turn = response.Turn
 	return
 }
 
 // main rpc function to tell the server to run the GOL based on some initial world data
 func (g *GolWorker) ProgressToTurn(req stubs.WorldData, res *stubs.WorldResponse) (err error) {
 	// sets up rpc connection, then loads the world and initialises flag variables
-	client, err := rpc.Dial("tcp", req.ClientIP)
 	world := loadWorld(req)
 	pause := false
 	halt := false
@@ -131,7 +143,6 @@ func (g *GolWorker) ProgressToTurn(req stubs.WorldData, res *stubs.WorldResponse
 		fmt.Println("Turn already taken")
 	} else {
 		// ticker to track when status messages need to be sent
-		ticker := time.NewTicker(2 * time.Second)
 		// loop until all worlds are complete
 		for world.Turn < req.Turn {
 			// if keypresses mean the program should stop then exit the loop
@@ -143,28 +154,29 @@ func (g *GolWorker) ProgressToTurn(req stubs.WorldData, res *stubs.WorldResponse
 				// select between control signals, and a default case
 				select {
 				// sending a live cells report every 2 seconds
-				case <-ticker.C:
+				case <-ticker:
 					fmt.Println("Sending live cells")
-					client.Call(stubs.LiveCellReport, stubs.LiveCellsCount{LiveCells: len(getLiveCells(world.Board)), Turn: world.Turn}, &stubs.Report{})
+					liveCellChan <- stubs.LiveCellsCount{LiveCells: len(getLiveCells(world.Board)), Turn: world.Turn}
 				// handling keypresses
 				case keyPress := <-keyPresses:
 					switch keyPress {
 					// s needs to make a PGM, so send a response object with current status
 					case 's':
-						client.Call(stubs.KeyPressResponse, stubs.WorldResponse{LiveCells: getLiveCells(world.Board), Turn: world.Turn}, &stubs.Report{})
+						keyPressResponses <- stubs.WorldResponse{LiveCells: getLiveCells(world.Board), Turn: world.Turn}
 					// q means that the client has shut, so indicate that the GOL needs to halt
 					case 'q':
 						halt = true
+						keyPressResponses <- stubs.WorldResponse{}
 					// k means that the GOL needs to end, and a new PGM needs to be made,
 					// update the response object, indicate that it's okay to continue, and that the program needs to close
 					case 'k':
-						client.Call(stubs.KeyPressResponse, stubs.WorldResponse{LiveCells: getLiveCells(world.Board), Turn: world.Turn}, &stubs.Report{})
+						keyPressResponses <- stubs.WorldResponse{LiveCells: getLiveCells(world.Board), Turn: world.Turn}
 						close = true
 						// p means pause, and the client needs to report the turn, so update the turn, indicate
 					// that processing has been paused, then indicate that it's okay for the client to continue
 					case 'p':
 						fmt.Println("Pausing")
-						client.Call(stubs.KeyPressResponse, stubs.WorldResponse{Turn: world.Turn}, &stubs.Report{})
+						keyPressResponses <- stubs.WorldResponse{LiveCells: make([]util.Cell, 0), Turn: world.Turn}
 						pause = true
 					}
 				// by default take another turn of the GOL, and increment turn
@@ -180,11 +192,12 @@ func (g *GolWorker) ProgressToTurn(req stubs.WorldData, res *stubs.WorldResponse
 				// to false
 				switch keyPress {
 				case 'k':
-					client.Call(stubs.KeyPressResponse, stubs.WorldResponse{LiveCells: getLiveCells(world.Board), Turn: world.Turn}, &stubs.Report{})
+					keyPressResponses <- stubs.WorldResponse{LiveCells: getLiveCells(world.Board), Turn: world.Turn}
 					close = true
 				case 'p':
 					fmt.Println("Continuing")
 					pause = false
+					keyPressResponses <- stubs.WorldResponse{}
 				}
 			}
 		}
@@ -197,7 +210,6 @@ func (g *GolWorker) ProgressToTurn(req stubs.WorldData, res *stubs.WorldResponse
 		stopRunning <- true
 	}
 	fmt.Println("Quitting...")
-	client.Close()
 	return
 }
 
