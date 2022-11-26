@@ -126,6 +126,7 @@ func (g *GolWorker) KeyPressed(req stubs.KeyPress, res *stubs.WorldResponse) (er
 func (g *GolWorker) LiveCellRequest(req stubs.Report, res *stubs.LiveCellsCount) (err error) {
 	ticker <- true
 	response := <-liveCellChan
+	fmt.Println("Response generated")
 	res.LiveCells = response.LiveCells
 	res.Turn = response.Turn
 	return

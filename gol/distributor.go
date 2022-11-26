@@ -114,7 +114,7 @@ func distributor(p Params, c distributorChannels) {
 
 	// setting up two-way RPC calls, server IP needs to be hardcoded
 
-	server := "127.0.0.1:8030"
+	server := "3.91.200.82:8030"
 	client, _ := rpc.Dial("tcp", server)
 
 	response := stubs.WorldResponse{}
