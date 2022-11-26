@@ -174,8 +174,7 @@ func (g *GolWorker) ProgressToTurn(req stubs.WorldData, res *stubs.WorldResponse
 					case 'k':
 						keyPressResponses <- stubs.WorldResponse{LiveCells: getLiveCells(world.Board), Turn: world.Turn}
 						close = true
-						time.Sleep(1 * time.Second)
-						// p means pause, and the client needs to report the turn, so update the turn, indicate
+					// p means pause, and the client needs to report the turn, so update the turn, indicate
 					// that processing has been paused, then indicate that it's okay for the client to continue
 					case 'p':
 						fmt.Println("Pausing")
@@ -226,4 +225,5 @@ func main() {
 	listener, _ := net.Listen("tcp", ":"+*pAddr)
 	go acceptListener(&listener)
 	<-stopRunning
+	time.Sleep(1 * time.Second)
 }
