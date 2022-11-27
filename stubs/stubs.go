@@ -4,18 +4,39 @@ import (
 	"uk.ac.bris.cs/gameoflife/util"
 )
 
-var TakeTurns = "GolWorker.ProgressToTurn"
-var LiveCellReport = "StatusReceiver.LiveCellReport"
-var KeyPressed = "GolWorker.KeyPressed"
 var KeyPressResponse = "StatusReceiver.KeyPressResponse"
-var CloseWorker = "GolWorker.Close"
+var LiveCellReport = "StatusReceiver.LiveCellReport"
+
+var TakeTurns = "GolBroker.MainGol"
+var KeyPressed = "GolBroker.KeyPress"
+
+var InitialiseWorker = "GolWorker.StartWorker"
+var TakeTurn = "GolWorker.TakeTurn"
+var WorkerKeyPress = "GolWorker.KeyPress"
 
 type WorldData struct {
-	LiveCells []util.Cell
-	Height    int
-	Width     int
-	Turn      int
-	ClientIP  string
+	World    [][]byte
+	Height   int
+	Width    int
+	Turn     int
+	Threads  int
+	ClientIP string
+}
+
+type WorkerInfo struct {
+	WorkerIP string
+}
+
+type WorldDataBounded struct {
+	Data   WorldData
+	Top    int
+	Bottom int
+}
+
+type BoundaryUpdate struct {
+	Top    []byte
+	Bottom []byte
+	Turn   int
 }
 
 type WorldResponse struct {

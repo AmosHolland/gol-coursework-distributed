@@ -75,9 +75,6 @@ func (s *StatusReceiver) KeyPressResponse(req stubs.WorldResponse, res *stubs.Re
 }
 
 // function for accepting a listener without blocking
-func acceptListener(listener *net.Listener) {
-	rpc.Accept(*listener)
-}
 
 // function to write a PGM file using IO channels, sends each cell down IO channel after initialising
 func writePgm(world [][]byte, c distributorChannels, fileName string) {
@@ -112,19 +109,21 @@ func distributor(p Params, c distributorChannels) {
 	turn := 0
 
 	// setting up two-way RPC calls, server IP needs to be hardcoded
-	server := "3.83.162.191:8030"
+	server := "127.0.0.1:8050"
 	client, _ := rpc.Dial("tcp", server)
 
 	rpc.Register(&StatusReceiver{})
-	listener, _ := net.Listen("tcp", ":8040")
+	listener, err := net.Listen("tcp", ":8040")
+	defer listener.Close()
+	fmt.Println(err)
 	response := stubs.WorldResponse{}
 
 	// making a channel for the golengine to report down after all turns have been completed, then calling
 	// the server to process these turns, and accepting the server for rpc calls back
 	turnsFinished := make(chan *rpc.Call, 2)
 	fmt.Println("Heya")
-	client.Go(stubs.TakeTurns, stubs.WorldData{LiveCells: getLiveCells(world, p), Width: p.ImageWidth, Height: p.ImageHeight, Turn: p.Turns, ClientIP: "137.222.114.249:8040"}, &response, turnsFinished)
-	go acceptListener(&listener)
+	client.Go(stubs.TakeTurns, stubs.WorldData{World: world, Width: p.ImageWidth, Height: p.ImageHeight, Turn: p.Turns, ClientIP: "127.0.0.1:8040", Threads: p.Threads}, &response, turnsFinished)
+	go rpc.Accept(listener)
 
 	// flag variables to manage pausing and halting
 	paused := false

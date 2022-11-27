@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/rpc"
+	"strings"
 	"time"
 
 	"uk.ac.bris.cs/gameoflife/stubs"
@@ -61,12 +62,6 @@ func getLiveCells(world [][]byte) []util.Cell {
 
 type GolBroker struct{}
 
-func (g *GolBroker) RegisterWorker(req stubs.WorkerInfo, res *stubs.Report) (err error) {
-	worker, _ := rpc.Dial("tcp", req.WorkerIP)
-	workers = append(workers, worker)
-	return
-}
-
 func (g *GolBroker) KeyPress(req stubs.KeyPress, res *stubs.Report) (err error) {
 	keyPresses <- req.Key
 	return
@@ -74,20 +69,18 @@ func (g *GolBroker) KeyPress(req stubs.KeyPress, res *stubs.Report) (err error) 
 
 func (g *GolBroker) MainGol(req stubs.WorldData, res *stubs.WorldResponse) (err error) {
 	if req.Threads <= len(workers) {
-
 		controller, _ := rpc.Dial("tcp", req.ClientIP)
 
 		heights := getSegmenttHeights(req.Height, req.Threads)
 		segmentStart := 0
-
 		responses := make([]stubs.WorldResponse, 0)
+
 		doneChannels := make([]chan *rpc.Call, 0)
 		boundaries := make([]Boundary, 0)
-
 		for i := 0; i < req.Threads; i++ {
 			initialisationData := stubs.WorldDataBounded{Data: req, Top: segmentStart, Bottom: segmentStart + heights[i]}
-			workers[i].Call(stubs.InitialiseWorker, initialisationData, &stubs.Report{})
-
+			err = workers[i].Call(stubs.InitialiseWorker, initialisationData, &stubs.Report{})
+			fmt.Println("Initialising workers", err)
 			responses = append(responses, stubs.WorldResponse{})
 			doneChannels = append(doneChannels, make(chan *rpc.Call, 2))
 			boundaries = append(boundaries, Boundary{Top: (req.Height + segmentStart - 1) % req.Height, Bottom: (segmentStart + heights[i]) % req.Height})
@@ -105,7 +98,6 @@ func (g *GolBroker) MainGol(req stubs.WorldData, res *stubs.WorldResponse) (err 
 		close := false
 
 		for turn < req.Turn {
-
 			if halt || close {
 				break
 			}
@@ -137,7 +129,8 @@ func (g *GolBroker) MainGol(req stubs.WorldData, res *stubs.WorldResponse) (err 
 				default:
 					liveCellsTemp := make([]util.Cell, 0)
 					for i := 0; i < req.Threads; i++ {
-						workers[i].Go(stubs.TakeTurn, stubs.BoundaryUpdate{Top: world[boundaries[i].Top], Bottom: world[boundaries[i].Bottom]}, &responses[i], doneChannels[i])
+
+						workers[i].Go(stubs.TakeTurn, stubs.BoundaryUpdate{Top: world[boundaries[i].Top], Bottom: world[boundaries[i].Bottom], Turn: turn}, &responses[i], doneChannels[i])
 					}
 
 					for i := 0; i < req.Threads; i++ {
@@ -146,7 +139,15 @@ func (g *GolBroker) MainGol(req stubs.WorldData, res *stubs.WorldResponse) (err 
 					}
 
 					world = worldFromLiveCells(liveCellsTemp, req.Height, req.Width)
+
 					liveCells = liveCellsTemp
+					if req.Height == 16 && turn == 1 {
+						for y, row := range world {
+							fmt.Println(y, row)
+						}
+						fmt.Println(liveCellsTemp)
+					}
+					turn++
 				}
 			} else {
 				// only need to handle keypresses in this state (I think), so no need for a select
@@ -161,7 +162,6 @@ func (g *GolBroker) MainGol(req stubs.WorldData, res *stubs.WorldResponse) (err 
 					pause = false
 				}
 			}
-			turn++
 		}
 		res.LiveCells = liveCells
 		res.Turn = turn
@@ -179,23 +179,23 @@ func (g *GolBroker) MainGol(req stubs.WorldData, res *stubs.WorldResponse) (err 
 
 func main() {
 	pAddr := flag.String("port", "8050", "Port to listen on")
+	workerIPs := flag.String("workers", "127.0.0.1:8030", "comma separated (no spaces) of worker IPs")
 	flag.Parse()
+
+	ips := strings.Split(*workerIPs, ",")
+
+	for _, ip := range ips {
+		worker, _ := rpc.Dial("tcp", ip)
+		workers = append(workers, worker)
+	}
 
 	rpc.Register(&GolBroker{})
 	listener, _ := net.Listen("tcp", ":"+*pAddr)
-	stopped := false
-	for {
-		select {
-		case <-stopRunning:
-			stopped = true
-		default:
-			go rpc.Accept(listener)
-		}
-		if stopped {
-			break
-		}
-	}
+	go rpc.Accept(listener)
+
+	<-stopRunning
 	for _, worker := range workers {
 		worker.Close()
 	}
+	time.Sleep(1 * time.Second)
 }
