@@ -113,9 +113,8 @@ func distributor(p Params, c distributorChannels) {
 	client, _ := rpc.Dial("tcp", server)
 
 	rpc.Register(&StatusReceiver{})
-	listener, err := net.Listen("tcp", ":8040")
+	listener, _ := net.Listen("tcp", ":8040")
 	defer listener.Close()
-	fmt.Println(err)
 	response := stubs.WorldResponse{}
 
 	// making a channel for the golengine to report down after all turns have been completed, then calling

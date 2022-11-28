@@ -18,6 +18,13 @@ var worldResponses chan []util.Cell = make(chan []util.Cell)
 var stopRunning chan bool = make(chan bool)
 
 // struct to store relevant data about a given world
+func encodeCells(cells []util.Cell) []util.Cell {
+	newCells := make([]util.Cell, 0)
+	for _, cell := range cells {
+		newCells = append(newCells, util.Cell{X: cell.X + 1, Y: cell.Y + 1})
+	}
+	return newCells
+}
 
 type WorldState struct {
 	World     [][]byte
@@ -105,8 +112,12 @@ func (g *GolWorker) KeyPress(req stubs.KeyPress, res *stubs.Report) (err error) 
 func (g *GolWorker) TakeTurn(req stubs.BoundaryUpdate, res *stubs.WorldResponse) (err error) {
 	turnChan <- req
 	response := <-worldResponses
-	res.LiveCells = response
-	res.Turn = 0
+	res.Liveness = 1
+	if len(response) == 0 {
+		res.Liveness = 2
+	}
+	res.LiveCells = encodeCells(response)
+	res.Turn = req.Turn + 1
 	return
 }
 
@@ -122,9 +133,10 @@ func GolRunner(req stubs.WorldDataBounded, setupDone chan bool) {
 	world := req.Data.World
 	top := req.Top
 	bottom := req.Bottom
-
+	fmt.Println(top, bottom)
 	topBound := (top - 1 + req.Data.Height) % req.Data.Height
-	bottomBound := (bottom + 1) % req.Data.Height
+	bottomBound := (bottom) % req.Data.Height
+	fmt.Println(topBound, bottomBound)
 
 	var liveCells []util.Cell
 
@@ -136,28 +148,23 @@ func GolRunner(req stubs.WorldDataBounded, setupDone chan bool) {
 	for !(halt || close) {
 		select {
 		case bounds := <-turnChan:
-			fmt.Println("Taking turn")
-			if req.Data.Height == 16 && bounds.Turn <= 5 {
+			if bounds.Turn >= req.Data.Turn {
+				halt = true
+			}
+
+			world[topBound] = bounds.Top
+			world[bottomBound] = bounds.Bottom
+			if req.Data.Height == 16 && bounds.Turn <= 50 {
 				fmt.Println(bounds.Turn)
 				for y, row := range world {
 					fmt.Println(y, row)
 				}
 			}
-			world[topBound] = bounds.Top
-			world[bottomBound] = bounds.Bottom
 
 			newState := calculateNextState(world, req.Data.Width, req.Data.Height, top, bottom)
 
 			world = newState.World
 			liveCells = newState.LiveCells
-
-			if bounds.Turn == 1 && req.Data.Height == 16 {
-				fmt.Println("Investigation")
-				for y, row := range world {
-					fmt.Println(y, row)
-				}
-				fmt.Println(liveCells)
-			}
 
 			worldResponses <- liveCells
 		case key := <-keyPresses:
@@ -173,6 +180,7 @@ func GolRunner(req stubs.WorldDataBounded, setupDone chan bool) {
 	if close {
 		stopRunning <- true
 	}
+	fmt.Println("Quitting...")
 }
 
 // main function, sets up the golengine

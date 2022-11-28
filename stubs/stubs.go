@@ -42,6 +42,11 @@ type BoundaryUpdate struct {
 type WorldResponse struct {
 	LiveCells []util.Cell
 	Turn      int
+	Liveness  byte
+}
+
+type BigWorldResponse struct {
+	World [][]byte
 }
 
 type TurnRequest struct {

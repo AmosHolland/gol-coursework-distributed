@@ -21,6 +21,14 @@ type Boundary struct {
 	Bottom int
 }
 
+func decodeCells(cells []util.Cell) []util.Cell {
+	newCells := make([]util.Cell, 0)
+	for _, cell := range cells {
+		newCells = append(newCells, util.Cell{X: cell.X - 1, Y: cell.Y - 1})
+	}
+	return newCells
+}
+
 func getSegmenttHeights(height, threads int) []int {
 	segmentHeight := height / threads
 	spare := height - (segmentHeight * threads)
@@ -68,6 +76,8 @@ func (g *GolBroker) KeyPress(req stubs.KeyPress, res *stubs.Report) (err error) 
 }
 
 func (g *GolBroker) MainGol(req stubs.WorldData, res *stubs.WorldResponse) (err error) {
+	fmt.Println("Gotcalled")
+	fmt.Println(req.Threads)
 	if req.Threads <= len(workers) {
 		controller, _ := rpc.Dial("tcp", req.ClientIP)
 
@@ -107,7 +117,6 @@ func (g *GolBroker) MainGol(req stubs.WorldData, res *stubs.WorldResponse) (err 
 				case <-ticker.C:
 					controller.Call(stubs.LiveCellReport, stubs.LiveCellsCount{LiveCells: len(liveCells), Turn: turn}, &stubs.Report{})
 				case keyPress := <-keyPresses:
-					fmt.Println(keyPress)
 					switch keyPress {
 					// s needs to make a PGM, so send a response object with current status
 					case 's':
@@ -115,38 +124,52 @@ func (g *GolBroker) MainGol(req stubs.WorldData, res *stubs.WorldResponse) (err 
 					// q means that the client has shut, so indicate that the GOL needs to halt
 					case 'q':
 						halt = true
+						for _, worker := range workers {
+							worker.Call(stubs.WorkerKeyPress, stubs.KeyPress{Key: 'q'}, &stubs.Report{})
+						}
 					// k means that the GOL needs to end, and a new PGM needs to be made,
 					// update the response object, indicate that it's okay to continue, and that the program needs to close
 					case 'k':
 						controller.Call(stubs.KeyPressResponse, stubs.WorldResponse{LiveCells: liveCells, Turn: turn}, &stubs.Report{})
 						close = true
+						for _, worker := range workers {
+							worker.Call(stubs.WorkerKeyPress, stubs.KeyPress{Key: 'k'}, &stubs.Report{})
+						}
 						// p means pause, and the client needs to report the turn, so update the turn, indicate
 					// that processing has been paused, then indicate that it's okay for the client to continue
 					case 'p':
 						controller.Call(stubs.KeyPressResponse, stubs.WorldResponse{LiveCells: liveCells, Turn: turn}, &stubs.Report{})
+						fmt.Println("Called back")
 						pause = true
 					}
 				default:
+					if req.Height == 16 && turn <= 50 {
+						fmt.Println(turn)
+						for y, row := range world {
+							fmt.Println(y, row)
+						}
+						fmt.Println(liveCells)
+					}
 					liveCellsTemp := make([]util.Cell, 0)
 					for i := 0; i < req.Threads; i++ {
-
 						workers[i].Go(stubs.TakeTurn, stubs.BoundaryUpdate{Top: world[boundaries[i].Top], Bottom: world[boundaries[i].Bottom], Turn: turn}, &responses[i], doneChannels[i])
 					}
 
 					for i := 0; i < req.Threads; i++ {
 						<-doneChannels[i]
-						liveCellsTemp = append(liveCellsTemp, responses[i].LiveCells...)
+						var response []util.Cell
+						if responses[i].Liveness == 1 {
+							response = decodeCells(responses[i].LiveCells)
+						} else {
+							response = make([]util.Cell, 0)
+						}
+						liveCellsTemp = append(liveCellsTemp, response...)
 					}
 
 					world = worldFromLiveCells(liveCellsTemp, req.Height, req.Width)
 
 					liveCells = liveCellsTemp
-					if req.Height == 16 && turn == 1 {
-						for y, row := range world {
-							fmt.Println(y, row)
-						}
-						fmt.Println(liveCellsTemp)
-					}
+
 					turn++
 				}
 			} else {
@@ -157,6 +180,9 @@ func (g *GolBroker) MainGol(req stubs.WorldData, res *stubs.WorldResponse) (err 
 				switch keyPress {
 				case 'k':
 					controller.Call(stubs.KeyPressResponse, stubs.WorldResponse{LiveCells: liveCells, Turn: turn}, &stubs.Report{})
+					for _, worker := range workers {
+						worker.Call(stubs.WorkerKeyPress, stubs.KeyPress{Key: 'k'}, &stubs.Report{})
+					}
 					close = true
 				case 'p':
 					pause = false
@@ -166,8 +192,15 @@ func (g *GolBroker) MainGol(req stubs.WorldData, res *stubs.WorldResponse) (err 
 		res.LiveCells = liveCells
 		res.Turn = turn
 
+		if !(close || halt) {
+			for _, worker := range workers {
+				worker.Call(stubs.WorkerKeyPress, stubs.KeyPress{Key: 'q'}, &stubs.Report{})
+			}
+		}
+
 		if close {
-			<-stopRunning
+			fmt.Println("Closing")
+			stopRunning <- true
 		}
 
 		controller.Close()
@@ -192,7 +225,7 @@ func main() {
 	rpc.Register(&GolBroker{})
 	listener, _ := net.Listen("tcp", ":"+*pAddr)
 	go rpc.Accept(listener)
-
+	fmt.Println("ready to close")
 	<-stopRunning
 	for _, worker := range workers {
 		worker.Close()
