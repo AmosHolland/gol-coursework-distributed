@@ -189,6 +189,7 @@ func (g *GolBroker) MainGol(req stubs.WorldData, res *stubs.WorldResponse) (err 
 				}
 			}
 		}
+		controller.Close()
 		res.LiveCells = liveCells
 		res.Turn = turn
 
@@ -203,7 +204,6 @@ func (g *GolBroker) MainGol(req stubs.WorldData, res *stubs.WorldResponse) (err 
 			stopRunning <- true
 		}
 
-		controller.Close()
 		fmt.Println("Quitting...")
 	}
 
@@ -230,5 +230,5 @@ func main() {
 	for _, worker := range workers {
 		worker.Close()
 	}
-	time.Sleep(1 * time.Second)
+	time.Sleep(2 * time.Second)
 }

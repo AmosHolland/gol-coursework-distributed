@@ -27,17 +27,6 @@ var keyPressResponses = make(chan stubs.WorldResponse)
 
 // function to get a list of live cells from a given world
 // goes through entire world, if a cell is live, it is added to the return list
-func getLiveCells(world [][]byte, p Params) []util.Cell {
-	liveCells := make([]util.Cell, 0)
-	for y, row := range world {
-		for x, status := range row {
-			if status == 255 {
-				liveCells = append(liveCells, util.Cell{X: x, Y: y})
-			}
-		}
-	}
-	return liveCells
-}
 
 // function to make a new 2D slice to represent a world given parameters and channels
 // sends to IO asking for the world, and gives it the file name, then reads in all cell values from the IO channel
@@ -52,7 +41,7 @@ func makeWorld(p Params, c distributorChannels) [][]byte {
 	c.ioFilename <- fileName
 
 	for y, row := range world {
-		for x, _ := range row {
+		for x := range row {
 			world[y][x] = <-c.ioInput
 		}
 	}
@@ -113,16 +102,17 @@ func distributor(p Params, c distributorChannels) {
 	client, _ := rpc.Dial("tcp", server)
 
 	rpc.Register(&StatusReceiver{})
-	listener, _ := net.Listen("tcp", ":8040")
-	defer listener.Close()
+	listener, err := net.Listen("tcp", ":8090")
+	fmt.Println(err)
 	response := stubs.WorldResponse{}
 
 	// making a channel for the golengine to report down after all turns have been completed, then calling
 	// the server to process these turns, and accepting the server for rpc calls back
 	turnsFinished := make(chan *rpc.Call, 2)
 	fmt.Println("Heya")
-	client.Go(stubs.TakeTurns, stubs.WorldData{World: world, Width: p.ImageWidth, Height: p.ImageHeight, Turn: p.Turns, ClientIP: "127.0.0.1:8040", Threads: p.Threads}, &response, turnsFinished)
+	client.Go(stubs.TakeTurns, stubs.WorldData{World: world, Width: p.ImageWidth, Height: p.ImageHeight, Turn: p.Turns, ClientIP: "127.0.0.1:8090", Threads: p.Threads}, &response, turnsFinished)
 	go rpc.Accept(listener)
+	defer listener.Close()
 
 	// flag variables to manage pausing and halting
 	paused := false
