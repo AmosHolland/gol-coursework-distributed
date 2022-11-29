@@ -143,13 +143,6 @@ func (g *GolBroker) MainGol(req stubs.WorldData, res *stubs.WorldResponse) (err 
 						pause = true
 					}
 				default:
-					if req.Height == 16 && turn <= 50 {
-						fmt.Println(turn)
-						for y, row := range world {
-							fmt.Println(y, row)
-						}
-						fmt.Println(liveCells)
-					}
 					liveCellsTemp := make([]util.Cell, 0)
 					for i := 0; i < req.Threads; i++ {
 						workers[i].Go(stubs.TakeTurn, stubs.BoundaryUpdate{Top: world[boundaries[i].Top], Bottom: world[boundaries[i].Bottom], Turn: turn}, &responses[i], doneChannels[i])
@@ -192,10 +185,10 @@ func (g *GolBroker) MainGol(req stubs.WorldData, res *stubs.WorldResponse) (err 
 		controller.Close()
 		res.LiveCells = liveCells
 		res.Turn = turn
-
+		controller.Close()
 		if !(close || halt) {
-			for _, worker := range workers {
-				worker.Call(stubs.WorkerKeyPress, stubs.KeyPress{Key: 'q'}, &stubs.Report{})
+			for i := 0; i < req.Threads; i++ {
+				workers[i].Call(stubs.WorkerKeyPress, stubs.KeyPress{Key: 'q'}, &stubs.Report{})
 			}
 		}
 
@@ -218,7 +211,8 @@ func main() {
 	ips := strings.Split(*workerIPs, ",")
 
 	for _, ip := range ips {
-		worker, _ := rpc.Dial("tcp", ip)
+		worker, err := rpc.Dial("tcp", ip)
+		fmt.Println(err)
 		workers = append(workers, worker)
 	}
 

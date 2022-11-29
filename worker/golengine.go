@@ -148,6 +148,7 @@ func GolRunner(req stubs.WorldDataBounded, setupDone chan bool) {
 	for !(halt || close) {
 		select {
 		case bounds := <-turnChan:
+			fmt.Println("Taking turn")
 			if bounds.Turn >= req.Data.Turn {
 				halt = true
 			}

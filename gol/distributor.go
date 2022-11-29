@@ -22,11 +22,16 @@ type distributorChannels struct {
 // channel for sending events from rpc calls to the main program loop
 var eventPasser = make(chan Event)
 var keyPressResponses = make(chan stubs.WorldResponse)
+var globalListener net.Listener
 
 // distributor divides the work between workers and interacts with other goroutines.
 
 // function to get a list of live cells from a given world
 // goes through entire world, if a cell is live, it is added to the return list
+
+func acceptListener(listener *net.Listener) {
+	rpc.Accept(*listener)
+}
 
 // function to make a new 2D slice to represent a world given parameters and channels
 // sends to IO asking for the world, and gives it the file name, then reads in all cell values from the IO channel
@@ -102,17 +107,19 @@ func distributor(p Params, c distributorChannels) {
 	client, _ := rpc.Dial("tcp", server)
 
 	rpc.Register(&StatusReceiver{})
-	listener, err := net.Listen("tcp", ":8090")
-	fmt.Println(err)
+
+	if globalListener == nil {
+		globalListener, _ = net.Listen("tcp", ":8091")
+	}
 	response := stubs.WorldResponse{}
 
 	// making a channel for the golengine to report down after all turns have been completed, then calling
 	// the server to process these turns, and accepting the server for rpc calls back
 	turnsFinished := make(chan *rpc.Call, 2)
 	fmt.Println("Heya")
-	client.Go(stubs.TakeTurns, stubs.WorldData{World: world, Width: p.ImageWidth, Height: p.ImageHeight, Turn: p.Turns, ClientIP: "127.0.0.1:8090", Threads: p.Threads}, &response, turnsFinished)
-	go rpc.Accept(listener)
-	defer listener.Close()
+
+	client.Go(stubs.TakeTurns, stubs.WorldData{World: world, Width: p.ImageWidth, Height: p.ImageHeight, Turn: p.Turns, ClientIP: "127.0.0.1:8091", Threads: p.Threads}, &response, turnsFinished)
+	go acceptListener(&globalListener)
 
 	// flag variables to manage pausing and halting
 	paused := false
