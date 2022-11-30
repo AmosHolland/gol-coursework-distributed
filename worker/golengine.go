@@ -16,6 +16,9 @@ var keyPresses chan rune = make(chan rune)
 var turnChan chan stubs.BoundaryUpdate = make(chan stubs.BoundaryUpdate)
 var worldResponses chan []util.Cell = make(chan []util.Cell)
 var stopRunning chan bool = make(chan bool)
+var ticker chan bool = make(chan bool)
+var liveCellChan chan stubs.LiveCellsCount = make(chan stubs.LiveCellsCount)
+var keyPressResponses chan stubs.WorldResponse = make(chan stubs.WorldResponse)
 
 // struct to store relevant data about a given world
 func encodeCells(cells []util.Cell) []util.Cell {
@@ -106,6 +109,15 @@ type GolWorker struct{}
 
 func (g *GolWorker) KeyPress(req stubs.KeyPress, res *stubs.Report) (err error) {
 	keyPresses <- req.Key
+	return
+}
+
+func (g *GolWorker) LiveCellRequest(req stubs.Report, res *stubs.LiveCellsCount) (err error) {
+	ticker <- true
+	response := <-liveCellChan
+	fmt.Println("Response generated")
+	res.LiveCells = response.LiveCells
+	res.Turn = response.Turn
 	return
 }
 

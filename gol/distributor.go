@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/rpc"
+	"time"
 
 	"uk.ac.bris.cs/gameoflife/stubs"
 	"uk.ac.bris.cs/gameoflife/util"
@@ -111,6 +112,7 @@ func distributor(p Params, c distributorChannels) {
 	if globalListener == nil {
 		globalListener, _ = net.Listen("tcp", ":8091")
 	}
+
 	response := stubs.WorldResponse{}
 
 	// making a channel for the golengine to report down after all turns have been completed, then calling
@@ -127,56 +129,65 @@ func distributor(p Params, c distributorChannels) {
 	complete := false
 
 	// main loop for dealing with events from outside of the controller
+	ticker := time.NewTicker(2 * time.Second)
 	for {
 		// if a keypress has led to a halt, or the golengine has finished processing, then end the loop
 		if halt || complete {
 			break
 		}
 		// select on relevant channels, code inside handles dealing with each event
-		select {
+		if !paused {
+			select {
 
-		// just passes a passed event on to events channel (needs to be done here as it needs access to c)
-		case event := <-eventPasser:
-			c.events <- event
-		// if the server is done processsing, then we need to stop and then generate a PGM
-		case <-turnsFinished:
-			complete = true
+			// just passes a passed event on to events channel (needs to be done here as it needs access to c)
+			case <-ticker.C:
+				tickerResponse := stubs.LiveCellsCount{}
+				client.Call(stubs.Ticker, stubs.Report{}, &tickerResponse)
+				c.events <- AliveCellsCount{CompletedTurns: tickerResponse.Turn, CellsCount: tickerResponse.LiveCells}
+			// if the server is done processsing, then we need to stop and then generate a PGM
+			case <-turnsFinished:
+				complete = true
 
-		// if a key is pressed then we need to handle this press
-		case keyPress := <-c.keyPresses:
-			// key press is first send along to the golengine to deal with things on that end
-			// this will block until things are finished on the server side
-			client.Call(stubs.KeyPressed, stubs.KeyPress{Key: rune(keyPress)}, &stubs.Report{Message: ""})
-			// then deal with any client side behaviour by setting flag variables, and printing to console if
-			// required
-			if keyPress == 's' && !paused {
-				data := <-keyPressResponses
-				fileName := fmt.Sprint(p.ImageWidth, "x", p.ImageHeight, "x", data.Turn)
-				writePgm(worldFromLiveCells(data.LiveCells, p), c, fileName)
-			}
-			if keyPress == 'q' && !paused {
-				halt = true
-			}
-			if keyPress == 'k' {
-				data := <-keyPressResponses
-				fileName := fmt.Sprint(p.ImageWidth, "x", p.ImageHeight, "x", data.Turn)
-				writePgm(worldFromLiveCells(data.LiveCells, p), c, fileName)
-				halt = true
-			}
-			if keyPress == 'p' {
-				// if paused, unpause, otherwise pause
-				if paused {
-					fmt.Println("Continuing")
-					paused = false
-				} else {
-					data := <-keyPressResponses
-					fmt.Println(data.Turn)
+			// if a key is pressed then we need to handle this press
+			case keyPress := <-c.keyPresses:
+				// key press is first send along to the golengine to deal with things on that end
+				// this will block until things are finished on the server side
+				keyResponse := stubs.WorldResponse{}
+				client.Call(stubs.KeyPressed, stubs.KeyPress{Key: keyPress}, &keyResponse)
+				// then deal with any client side behaviour by setting flag variables, and printing to console if
+				// required
+				switch keyPress {
+				case 's':
+					fileName := fmt.Sprint(p.ImageWidth, "x", p.ImageHeight, "x", keyResponse.Turn)
+					writePgm(worldFromLiveCells(keyResponse.LiveCells, p), c, fileName)
+				case 'q':
+					halt = true
+				case 'k':
+					fileName := fmt.Sprint(p.ImageWidth, "x", p.ImageHeight, "x", keyResponse.Turn)
+					writePgm(worldFromLiveCells(keyResponse.LiveCells, p), c, fileName)
+					halt = true
+				case 'p':
+					fmt.Println(keyResponse.Turn)
 					paused = true
 				}
 
 			}
 
+		} else {
+			keyPress := <-c.keyPresses
+			switch keyPress {
+			case 'p':
+				client.Call(stubs.KeyPressed, stubs.KeyPress{Key: keyPress}, &response)
+				paused = false
+			case 'k':
+				pausedResponse := stubs.WorldResponse{}
+				client.Call(stubs.KeyPressed, stubs.KeyPress{Key: keyPress}, &pausedResponse)
+				fileName := fmt.Sprint(p.ImageWidth, "x", p.ImageHeight, "x", response.Turn)
+				writePgm(worldFromLiveCells(response.LiveCells, p), c, fileName)
+				halt = true
+			}
 		}
+
 	}
 
 	// after main loop has ended send an event for the final turn, and create a final PGM of the world if necessary
