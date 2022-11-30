@@ -23,10 +23,6 @@ type WorldData struct {
 	ClientIP string
 }
 
-type WorkerInfo struct {
-	WorkerIP string
-}
-
 type WorldDataBounded struct {
 	Data   WorldData
 	Top    int
@@ -47,10 +43,6 @@ type WorldResponse struct {
 
 type BigWorldResponse struct {
 	World [][]byte
-}
-
-type TurnRequest struct {
-	Turn int
 }
 
 type LiveCellsCount struct {
