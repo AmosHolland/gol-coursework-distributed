@@ -23,21 +23,15 @@ type distributorChannels struct {
 // channel for sending events from rpc calls to the main program loop
 var eventPasser = make(chan Event)
 var keyPressResponses = make(chan stubs.WorldResponse)
+var globalListener net.Listener
 
 // distributor divides the work between workers and interacts with other goroutines.
 
 // function to get a list of live cells from a given world
 // goes through entire world, if a cell is live, it is added to the return list
-func getLiveCells(world [][]byte, p Params) []util.Cell {
-	liveCells := make([]util.Cell, 0)
-	for y, row := range world {
-		for x, status := range row {
-			if status == 255 {
-				liveCells = append(liveCells, util.Cell{X: x, Y: y})
-			}
-		}
-	}
-	return liveCells
+
+func acceptListener(listener *net.Listener) {
+	rpc.Accept(*listener)
 }
 
 // function to make a new 2D slice to represent a world given parameters and channels
@@ -76,9 +70,6 @@ func (s *StatusReceiver) KeyPressResponse(req stubs.WorldResponse, res *stubs.Re
 }
 
 // function for accepting a listener without blocking
-func acceptListener(listener *net.Listener) {
-	rpc.Accept(*listener)
-}
 
 // function to write a PGM file using IO channels, sends each cell down IO channel after initialising
 func writePgm(world [][]byte, c distributorChannels, fileName string) {
@@ -113,16 +104,24 @@ func distributor(p Params, c distributorChannels) {
 	turn := 0
 
 	// setting up two-way RPC calls, server IP needs to be hardcoded
-
-	server := "3.91.200.82:8030"
+	server := "127.0.0.1:8050"
 	client, _ := rpc.Dial("tcp", server)
+
+	rpc.Register(&StatusReceiver{})
+
+	if globalListener == nil {
+		globalListener, _ = net.Listen("tcp", ":8091")
+	}
 
 	response := stubs.WorldResponse{}
 
 	// making a channel for the golengine to report down after all turns have been completed, then calling
 	// the server to process these turns, and accepting the server for rpc calls back
 	turnsFinished := make(chan *rpc.Call, 2)
-	client.Go(stubs.TakeTurns, stubs.WorldData{LiveCells: getLiveCells(world, p), Width: p.ImageWidth, Height: p.ImageHeight, Turn: p.Turns, ClientIP: "127.0.0.1:8040"}, &response, turnsFinished)
+	fmt.Println("Heya")
+
+	client.Go(stubs.TakeTurns, stubs.WorldData{World: world, Width: p.ImageWidth, Height: p.ImageHeight, Turn: p.Turns, ClientIP: "127.0.0.1:8091", Threads: p.Threads}, &response, turnsFinished)
+	go acceptListener(&globalListener)
 
 	// flag variables to manage pausing and halting
 	paused := false
