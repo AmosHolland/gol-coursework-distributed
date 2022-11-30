@@ -11,13 +11,13 @@ import (
 	"uk.ac.bris.cs/gameoflife/util"
 )
 
-// channels to handle communication from rpc called functions
+// Channels to handle communication from rpc functions.
 var keyPresses chan rune = make(chan rune)
 var turnChan chan stubs.BoundaryUpdate = make(chan stubs.BoundaryUpdate)
 var worldResponses chan []util.Cell = make(chan []util.Cell)
 var stopRunning chan bool = make(chan bool)
 
-// struct to store relevant data about a given world
+// Function to remove 0s from a list of cells before sending.
 func encodeCells(cells []util.Cell) []util.Cell {
 	newCells := make([]util.Cell, 0)
 	for _, cell := range cells {
@@ -26,12 +26,13 @@ func encodeCells(cells []util.Cell) []util.Cell {
 	return newCells
 }
 
+// Structure to store the world state of a segment as both a 2D slice and list of live cells.
 type WorldState struct {
 	World     [][]byte
 	LiveCells []util.Cell
 }
 
-// main engine of Game of life, calculates the next state of a world in game of life, and returns it
+// Main engine of Game of life, calculates the next state of a world in game of life, and returns it.
 func calculateNextState(world [][]byte, width, height, top, bottom int) WorldState {
 
 	// makes an empty world to store live cells
@@ -40,10 +41,12 @@ func calculateNextState(world [][]byte, width, height, top, bottom int) WorldSta
 		newWorld[i] = make([]byte, height)
 	}
 
+	// Empty list for new live cells
 	newLiveCells := make([]util.Cell, 0)
 
-	// goes through every cell
+	// Goes through every cell
 	for y, row := range world {
+		// Only processes a cell if it's within the workers range.
 		if y >= top && y < bottom {
 			for x, status := range row {
 				// scores each cell
@@ -60,6 +63,7 @@ func calculateNextState(world [][]byte, width, height, top, bottom int) WorldSta
 					}
 				}
 
+				// If a cell is alive add it to the list of live cells.
 				if newStatus == 255 {
 					newLiveCells = append(newLiveCells, util.Cell{X: x, Y: y})
 				}
@@ -70,6 +74,7 @@ func calculateNextState(world [][]byte, width, height, top, bottom int) WorldSta
 		}
 	}
 
+	// Return the new world state.
 	return WorldState{World: newWorld, LiveCells: newLiveCells}
 }
 
@@ -109,19 +114,28 @@ func (g *GolWorker) KeyPress(req stubs.KeyPress, res *stubs.Report) (err error) 
 	return
 }
 
+// RPC call to tell an already running GoL to take another turn.
 func (g *GolWorker) TakeTurn(req stubs.BoundaryUpdate, res *stubs.WorldResponse) (err error) {
+	// Sends boundaries down a channel
 	turnChan <- req
+	// Gets a respone back
 	response := <-worldResponses
+
+	// Sets liveness value based on whether or not there are any live cells.
 	res.Liveness = 1
 	if len(response) == 0 {
 		res.Liveness = 2
 	}
+
+	// Encode cells before updating response object, and update turn.
 	res.LiveCells = encodeCells(response)
 	res.Turn = req.Turn + 1
 	return
 }
 
+// RPC call for initialising a worker with new data.
 func (g *GolWorker) StartWorker(req stubs.WorldDataBounded, res *stubs.Report) (err error) {
+	// Runs a GolRunner, and wait for it to say that setup is done.
 	setupDone := make(chan bool)
 	go GolRunner(req, setupDone)
 	<-setupDone
@@ -130,44 +144,49 @@ func (g *GolWorker) StartWorker(req stubs.WorldDataBounded, res *stubs.Report) (
 }
 
 func GolRunner(req stubs.WorldDataBounded, setupDone chan bool) {
+	// Setup World data from request
 	world := req.Data.World
 	top := req.Top
 	bottom := req.Bottom
-	fmt.Println(top, bottom)
+
+	// Calculate boundary regions for given region.
 	topBound := (top - 1 + req.Data.Height) % req.Data.Height
 	bottomBound := (bottom) % req.Data.Height
-	fmt.Println(topBound, bottomBound)
 
+	// Empty list for live cells.
 	var liveCells []util.Cell
 
+	// Flag variables.
 	halt := false
 	close := false
 
+	// Indicate that the worker is ready to run.
 	setupDone <- true
 
+	// Main loop for processing turns.
 	for !(halt || close) {
 		select {
+		// If new bounds have been sent in, take a turn.
 		case bounds := <-turnChan:
-			fmt.Println("Taking turn")
+
 			if bounds.Turn >= req.Data.Turn {
 				halt = true
 			}
 
+			// Set boundary rows to their new values.
 			world[topBound] = bounds.Top
 			world[bottomBound] = bounds.Bottom
-			if req.Data.Height == 16 && bounds.Turn <= 50 {
-				fmt.Println(bounds.Turn)
-				for y, row := range world {
-					fmt.Println(y, row)
-				}
-			}
 
+			// Then calculate a new state on this updated world.
 			newState := calculateNextState(world, req.Data.Width, req.Data.Height, top, bottom)
 
+			// Set values from newly calculated state.
 			world = newState.World
 			liveCells = newState.LiveCells
 
+			// Send live cells back to called method to pass it to broker.
 			worldResponses <- liveCells
+		// If a key press is received set flags accordingly.
 		case key := <-keyPresses:
 			switch key {
 			case 'q':
@@ -178,6 +197,8 @@ func GolRunner(req stubs.WorldDataBounded, setupDone chan bool) {
 		}
 
 	}
+
+	// If the worker has been told to close fully then send a signal to main to do this.
 	if close {
 		stopRunning <- true
 	}
@@ -189,10 +210,11 @@ func main() {
 	// setting up rpc calls
 	pAddr := flag.String("port", "8030", "Port to listen on")
 	flag.Parse()
-
 	rpc.Register(&GolWorker{})
 	listener, _ := net.Listen("tcp", ":"+*pAddr)
 	go rpc.Accept(listener)
+
+	// When the main function is told to stop, wait before doing this so any final messages can be sent.
 	<-stopRunning
 	time.Sleep(1 * time.Second)
 }

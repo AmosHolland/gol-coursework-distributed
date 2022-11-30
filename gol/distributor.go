@@ -19,16 +19,16 @@ type distributorChannels struct {
 	keyPresses <-chan rune
 }
 
-// channel for sending events from rpc calls to the main program loop
+// channels for sending events from rpc calls to the main program loop
 var eventPasser = make(chan Event)
 var keyPressResponses = make(chan stubs.WorldResponse)
+
+// Global listener (so if the listener already exists we don't lose access to the port)
 var globalListener net.Listener
 
 // distributor divides the work between workers and interacts with other goroutines.
 
-// function to get a list of live cells from a given world
-// goes through entire world, if a cell is live, it is added to the return list
-
+// function to async accept a listener
 func acceptListener(listener *net.Listener) {
 	rpc.Accept(*listener)
 }
@@ -57,18 +57,17 @@ func makeWorld(p Params, c distributorChannels) [][]byte {
 // struct for RPC calls
 type StatusReceiver struct{}
 
-// RPC function to allow the server to send live cell reports to the controller
+// RPC function to allow the broker to send live cell reports to the controller
 func (s *StatusReceiver) LiveCellReport(req stubs.LiveCellsCount, res *stubs.Report) (err error) {
 	eventPasser <- AliveCellsCount{CompletedTurns: req.Turn, CellsCount: req.LiveCells}
 	return
 }
 
+// RPC function to allow the broker to send responses to key presses to the controller
 func (s *StatusReceiver) KeyPressResponse(req stubs.WorldResponse, res *stubs.Report) (err error) {
 	keyPressResponses <- req
 	return
 }
-
-// function for accepting a listener without blocking
 
 // function to write a PGM file using IO channels, sends each cell down IO channel after initialising
 func writePgm(world [][]byte, c distributorChannels, fileName string) {
@@ -109,16 +108,15 @@ func distributor(p Params, c distributorChannels) {
 	rpc.Register(&StatusReceiver{})
 
 	if globalListener == nil {
-		globalListener, _ = net.Listen("tcp", ":8091")
+		globalListener, _ = net.Listen("tcp", ":8040")
 	}
 	response := stubs.WorldResponse{}
 
 	// making a channel for the golengine to report down after all turns have been completed, then calling
 	// the server to process these turns, and accepting the server for rpc calls back
 	turnsFinished := make(chan *rpc.Call, 2)
-	fmt.Println("Heya")
 
-	client.Go(stubs.TakeTurns, stubs.WorldData{World: world, Width: p.ImageWidth, Height: p.ImageHeight, Turn: p.Turns, ClientIP: "127.0.0.1:8091", Threads: p.Threads}, &response, turnsFinished)
+	client.Go(stubs.TakeTurns, stubs.WorldData{World: world, Width: p.ImageWidth, Height: p.ImageHeight, Turn: p.Turns, ClientIP: "127.0.0.1:8040", Threads: p.Threads}, &response, turnsFinished)
 	go acceptListener(&globalListener)
 
 	// flag variables to manage pausing and halting
@@ -145,10 +143,12 @@ func distributor(p Params, c distributorChannels) {
 		// if a key is pressed then we need to handle this press
 		case keyPress := <-c.keyPresses:
 			// key press is first send along to the golengine to deal with things on that end
-			// this will block until things are finished on the server side
+			// this will block until things are finished on the broker's side
 			client.Call(stubs.KeyPressed, stubs.KeyPress{Key: rune(keyPress)}, &stubs.Report{Message: ""})
 			// then deal with any client side behaviour by setting flag variables, and printing to console if
 			// required
+
+			// broker will call KeyPressResponse to send any relevant data back - which uses the KeyPressResponses channel
 			if keyPress == 's' && !paused {
 				data := <-keyPressResponses
 				fileName := fmt.Sprint(p.ImageWidth, "x", p.ImageHeight, "x", data.Turn)
@@ -164,7 +164,6 @@ func distributor(p Params, c distributorChannels) {
 				halt = true
 			}
 			if keyPress == 'p' {
-				// if paused, unpause, otherwise pause
 				if paused {
 					fmt.Println("Continuing")
 					paused = false
